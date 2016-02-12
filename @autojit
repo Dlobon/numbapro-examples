@@ -1,0 +1,74 @@
+@autojit
+
+def LOOP(DENSITY,ENERGY, MATRIX, IBOX, JBOX, KBOX, MATRIXCONTROL,PLANE,Dth,Dph):
+    for theta in range(0,91,Dth):
+      for phi in range(0,91,Dph):
+          INEW = IBOX[theta, phi,:]
+          JNEW = JBOX[theta, phi,:]
+          KNEW = KBOX[theta, phi,:]
+          MATRIXCONTROL = np.zeros((MATRIX.shape[0], MATRIX.shape[1], MATRIX.shape[2]), dtype = np.float32)
+          if PLANE[theta,phi,0]<0:
+             loop2( DENSITY,ENERGY, MATRIX, INEW, JNEW, KNEW, MATRIXCONTROL, 1, MATRIX.shape[1], MATRIX.shape[2])
+          if PLANE[theta,phi,1]<0:
+             loop2( DENSITY,ENERGY, MATRIX, INEW, JNEW, KNEW, MATRIXCONTROL, MATRIX.shape[0], 1, MATRIX.shape[2])
+          if PLANE[theta,phi,2]<0:
+             loop2( DENSITY,ENERGY, MATRIX, INEW, JNEW, KNEW, MATRIXCONTROL, MATRIX.shape[0],MATRIX.shape[1],1) 
+    return MATRIX
+
+@autojit
+def loop2( DENSITY,ENERGY, MATRIX, INEW, JNEW, KNEW,  MATRIXCONTROL, IEND, JEND, KEND):
+  for i in range(0, IEND):
+     for j in range(0, JEND):   
+        for k in range(0, KEND):   
+          if MATRIXCONTROL[i,j,k]==0:
+             loo3(DENSITY,ENERGY, MATRIX, INEW, JNEW, KNEW,  MATRIXCONTROL, i, j, k, 1, 1, 1, 0, 0, 0)    
+             loop3(DENSITY,ENERGY, MATRIX, INEW, JNEW, KNEW,  MATRIXCONTROL, i, j, k, -1, 1, 1, 1, 0, 0)
+  return
+
+@autojit
+
+def loop3(DENSITY,ENERGY, MATRIX, INEW, JNEW, KNEW,  MATRIXCONTROL,i,j,k,T1,T2,T3,t11,t22,t33):
+                n=i+j+k
+                trei=i
+                trej=j
+                trek=k
+                while  0<=trei<MATRIX.shape[0] and 0<=trej<MATRIX.shape[1] and 0<=trek<MATRIX.shape[2]:
+                   if DENSITY[T1*trei,T2*trej,T3*trek]>0:
+                     MATRIX[T1*trei-t11,T2*trej-t22,T3*trek-t33]+=math.exp(ENERGY[i,j,k])
+                     MATRIXCONTROL[trei,trej,trek]=1
+                     n+=1
+                     trei=trei+INEW[n]
+                     trej=trej+JNEW[n]
+                     trek=trek+KNEW[n]
+                return 
+
+def main():
+    Dtheta=16
+    Dphi=16  
+    MATRIX  = np.zeros((N[0],N[1],N[2]), dtype = np.float32)            
+    ENERGY=np.random.rand(135,250,135).astype(np.float32)        
+    PLANE = np.load("inew.npy").astype(np.int)    
+    DENSITY= np.load("density.npy").astype(np.int)    
+    MATRIXCONTROL = np.zeros((N[0],N[1],N[2]), dtype = np.float32)        
+    IBOX = np.load("inew.npy").astype(np.int) 
+    JBOX = np.load("jnew.npy").astype(np.int) 
+    KBOX = np.load("knew.npy").astype(np.int) 
+    start = timer()      
+    suma=LOOP(DENSITY, ENERGY, MATRIX, IBOX,JBOX,KBOX, MATRIXCONTROL,PLANE,Dth,Dph)
+    dt =round((timer() - start),2)
+    my_gpu = numba.cuda.get_current_device()
+    print "Running on GPU:", my_gpu.name
+    cores_per_capability = {1: 8,2: 32,3: 192,}
+    cc = my_gpu.compute_capability
+    print "Compute capability: ", "%d.%d" % cc, "(Numba requires >= 2.0)"
+    majorcc = cc[0]
+    print "Number of streaming multiprocessor:", my_gpu.MULTIPROCESSOR_COUNT
+    cores_per_multiprocessor = cores_per_capability[majorcc]
+    print "Number of cores per mutliprocessor:", cores_per_multiprocessor
+    total_cores = cores_per_multiprocessor * my_gpu.MULTIPROCESSOR_COUNT
+    print "Number of cores on GPU:", total_cores
+    print"Wall clock time with CUDA in %f s (DOSE)" % dt
+
+if __name__ == '__main__':
+    main()
+
